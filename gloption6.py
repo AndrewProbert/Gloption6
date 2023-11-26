@@ -9,7 +9,7 @@ symbol = 'spy'
 #Quick notes. This program needs to be re written so each day is processed seperately. Also a stop profit needs to be implemented such as -5 precent from the highest price we could have sold for.
 
 def ema_greater_than_knn(ema, knn_ma):
-    if ema * 1.0 > knn_ma:
+    if ema * 1 > knn_ma:
         return 1
     else:
         return 0
@@ -90,7 +90,7 @@ def calculate_sma(price_values, sma_len):
     return sma
 
 
-def calcMACD(data, short_period=12, long_period=26, signal_period=9):
+def calcMACD(data, short_period=10, long_period=20, signal_period=9):
     short_ema = calcEMA(data, short_period)
     long_ema = calcEMA(data, long_period)
 
@@ -215,22 +215,15 @@ for i in range(len(historical_data)):
             vwap = None
 
 
-        stopLoss = 0.0  # Stop loss percentage (e.g. 0.95 for 5% stop loss)
-
-        if (tradeOpen == False and (KnnEmaX == 1) and (MACDConverge == 1) ):
+        if (tradeOpen == False and (KnnEmaX == 1) and (MACDConverge == 1 ) ) :
             buyPrice = close_price
             buyTime = date
             tradeOpen = True
             shares = capital / buyPrice
 
             print("Buy at: ", buyPrice, "on: ", buyTime, "Shares: ", shares)
-
-        elif (close_price <= buyPrice * stopLoss):
-            stopLossTriggered = True
-            sellPrice =  close_price
-            sellTime = date
-            print("Stop loss triggered!")
-
+            
+            
         elif ((KnnEmaX == 0) and (tradeOpen == True)):
             sellPrice = close_price
             sellTime = date
@@ -239,68 +232,37 @@ for i in range(len(historical_data)):
             profit = sellPrice - buyPrice
             print("Profit: ", profit)
 
-            if sellPrice <= buyPrice * stopLoss:
-                stopLossTriggered = True
-                print("Stop loss triggered!")
+
+
+
+
+            buyPriceArray.append(buyPrice)
+            sellPriceArray.append(sellPrice)
+            buyTimeArray.append(buyTime)
+            sellTimeArray.append(sellTime)
+            profitArray.append(profit)
+
+            capital = shares * sellPrice
+            capitalArray.append(capital)
+
+            percentage = (sellPrice - buyPrice) / buyPrice * 100
+            percentageArray.append(percentage)
+            
+
+            if profit > 0:
+                positive.append(profit)
             else:
-                stopLossTriggered = False
+                negative.append(profit)
 
-            if not stopLossTriggered:
-                buyPriceArray.append(buyPrice)
-                sellPriceArray.append(sellPrice)
-                buyTimeArray.append(buyTime)
-                sellTimeArray.append(sellTime)
-                profitArray.append(profit)
 
-                capital = shares * sellPrice
-                capitalArray.append(capital)
+            # Record profit by year
+            year = index.year
+            if year not in profit_by_year:
+                profit_by_year[year] = []
+            profit_by_year[year].append(profit)
 
-                percentage = (sellPrice - buyPrice) / buyPrice * 100
-                percentageArray.append(percentage)
 
-                if profit > 0:
-                    positive.append(profit)
-                else:
-                    negative.append(profit)
-
-                # Record profit by year
-                year = index.year
-                if year not in profit_by_year:
-                    profit_by_year[year] = []
-                profit_by_year[year].append(profit)
-                
-            else:
-                print("Stop loss triggered!")
-                tradeOpen = False
-                stopLossTriggered = False
-                
-                profit = sellPrice - buyPrice
-                print("Sell at: ", sellPrice, "on: ", sellTime)
-                print("Profit: ", profit)
-
-                buyPriceArray.append(buyPrice)
-                sellPriceArray.append(sellPrice)
-                buyTimeArray.append(buyTime)
-                sellTimeArray.append(sellTime)
-                profitArray.append(profit)
-
-                capital = shares * sellPrice
-                capitalArray.append(capital)
-
-                percentage = (sellPrice - buyPrice) / buyPrice * 100
-                percentageArray.append(percentage)
-
-                if profit > 0:
-                    positive.append(profit)
-                else:
-                    negative.append(profit)
-
-                # Record profit by year
-                year = index.year
-                if year not in profit_by_year:
-                    profit_by_year[year] = []
-                profit_by_year[year].append(profit)
-                
+        
         table.append([date, open_price, close_price, volume, ema, knn_ma, KnnEmaX, TrendConfirmation, tradeOpen])
 
 header = ['Date', 'Open', 'Close', 'Volume', 'EMA_5', 'KNN_MA', 'KnnEmaX', 'TrendConfirmation', 'TradeOpen']
