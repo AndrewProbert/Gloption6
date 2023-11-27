@@ -82,7 +82,7 @@ def calculate_knn_prediction(price_values, ma_len, num_closest_values=3, smoothi
                        for i in range(smoothing_period, len(price_values))]
     return knn_predictions
 
-sma_len = 9 
+sma_len = 20 
 
 def calculate_sma(price_values, sma_len):
     sma = [np.mean(price_values[i-sma_len:i]) for i in range(sma_len, len(price_values))]
@@ -90,7 +90,7 @@ def calculate_sma(price_values, sma_len):
     return sma
 
 
-def calcMACD(data, short_period=10, long_period=20, signal_period=9):
+def calcMACD(data, short_period=12, long_period=26, signal_period=9):
     short_ema = calcEMA(data, short_period)
     long_ema = calcEMA(data, long_period)
 
@@ -155,11 +155,11 @@ percentageArray = []
 #I think making a protfolio consisting of HIBL, MSTR, OILU, KOLD
 symbol = 'soxl'
 ticker = yf.Ticker(symbol) #hibl seems to be the best thus far
-start_date = "1999-11-07"
+start_date = "2023-10-07"
 end_date = "2023-11-15"
 interval = "1d"
 #data = ticker.history(start=start_date, end=end_date, interval='1d') #could try doing hourly with confirmation on daily or weekly
-data = ticker.history(start=start_date, interval='1d')
+data = ticker.history(start=start_date, interval='1h')
 historical_data.append(data)
 
 
@@ -215,7 +215,7 @@ for i in range(len(historical_data)):
             vwap = None
 
 
-        if (tradeOpen == False and (KnnEmaX == 1) and (MACDConverge == 1 ) ) :
+        if (tradeOpen == False and (TrendConfirmation == 1) and (MACDConverge == 0) ) :
             buyPrice = close_price
             buyTime = date
             tradeOpen = True
@@ -224,7 +224,7 @@ for i in range(len(historical_data)):
             print("Buy at: ", buyPrice, "on: ", buyTime, "Shares: ", shares)
             
             
-        elif ((KnnEmaX == 0) and (tradeOpen == True)):
+        elif ((KnnEmaX == 0) and (tradeOpen == True)) or (tradeOpen == True and close_price > open_price and close_price > buyPrice and close_price > previous_close and close_price > previous_open ):
             sellPrice = close_price
             sellTime = date
             tradeOpen = False
@@ -260,6 +260,9 @@ for i in range(len(historical_data)):
             if year not in profit_by_year:
                 profit_by_year[year] = []
             profit_by_year[year].append(profit)
+
+        previous_close = close_price
+        previous_open = open_price
 
 
         
