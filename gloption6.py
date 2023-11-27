@@ -82,15 +82,14 @@ def calculate_knn_prediction(price_values, ma_len, num_closest_values=3, smoothi
                        for i in range(smoothing_period, len(price_values))]
     return knn_predictions
 
-sma_len = 20 
-
+sma_len =30
 def calculate_sma(price_values, sma_len):
     sma = [np.mean(price_values[i-sma_len:i]) for i in range(sma_len, len(price_values))]
     sma = [0]*sma_len + sma
     return sma
 
 
-def calcMACD(data, short_period=12, long_period=26, signal_period=9):
+def calcMACD(data, short_period=9, long_period=12, signal_period=9):
     short_ema = calcEMA(data, short_period)
     long_ema = calcEMA(data, long_period)
 
@@ -117,7 +116,7 @@ def macdCross(macd, signal):
         return 0
 
 
-def stoch(data, period=50):
+def stoch(data, period=20):
     stoch = [np.nan]*period
     for i in range(period, len(data)):
         high = max(data[i-period:i])
@@ -131,6 +130,36 @@ def calcVWAP(data, volume, period=50):
         vwap.append(sum(data[i-period:i]*volume[i-period:i]) / sum(volume[i-period:i]))
     return vwap
 
+def rsi (data, period=3):
+    rsi = [np.nan]*period
+    for i in range(period, len(data)):
+        gains = []
+        losses = []
+        for j in range(i-period, i):
+            if data[j] > data[j-1]:
+                gains.append(data[j] - data[j-1])
+            else:
+                losses.append(data[j-1] - data[j])
+        avg_gain = sum(gains) / period
+        avg_loss = sum(losses) / period
+        if avg_loss == 0:
+            rsi.append(100)
+        else:
+            rsi.append(100 - (100 / (1 + avg_gain / avg_loss)))
+    return rsi
+
+def mfi (data, volume, period=3):
+    mfi = [np.nan]*period
+    for i in range(period, len(data)):
+        pos_mf = 0
+        neg_mf = 0
+        for j in range(i-period, i):
+            if data[j] > data[j-1]:
+                pos_mf += data[j] * volume[j]
+            else:
+                neg_mf += data[j] * volume[j]
+        mfi.append(100 - (100 / (1 + pos_mf / neg_mf)))
+    return mfi
 
 
 #Ticker Detailss
@@ -153,28 +182,32 @@ capitalArray = []
 percentageArray = []
 
 #I think making a protfolio consisting of HIBL, MSTR, OILU, KOLD
-symbol = 'soxl'
+symbol = 'spy'
 ticker = yf.Ticker(symbol) #hibl seems to be the best thus far
-start_date = "2023-10-07"
-end_date = "2023-11-15"
+start_date = "2000-11-30"
+end_date = "2023-11-27"
 interval = "1d"
 #data = ticker.history(start=start_date, end=end_date, interval='1d') #could try doing hourly with confirmation on daily or weekly
-data = ticker.history(start=start_date, interval='1h')
+data = ticker.history(start=start_date, interval='1d')
 historical_data.append(data)
 
 
-
+tradeCheck = False
 
 
 for i in range(len(historical_data)):
-    ma_len = 5
-    ema_len_5 = 5
-    historical_data[i]['EMA_5'] = calculate_knn_ma(historical_data[i]['Close'], ema_len_5)
+    ma_len = 20
+    ema_len_5 = 10
+    historical_data[i]['EMA_5'] = calculate_ema(historical_data[i]['Close'], ema_len_5)
     historical_data[i]['KNN_MA'] = calculate_ema(historical_data[i]['Close'], ma_len)
     historical_data[i]['SMA'] = calculate_sma(historical_data[i]['Close'], sma_len)
     historical_data[i]['MACD'], historical_data[i]['Signal'] = calcMACD(historical_data[i]['Close'])
     historical_data[i]['STOCH'] = stoch(historical_data[i]['Close'])
-    #historical_data[i]['VWAP'] = calcVWAP(historical_data[i]['Close'], historical_data[i]['Volume'])
+    historical_data[i]['VWAP'] = calcVWAP(historical_data[i]['Close'], historical_data[i]['Volume'])
+    historical_data[i]['50_EMA'] = calculate_ema(historical_data[i]['Close'], 30)
+    historical_data[i]['RSI'] = rsi(historical_data[i]['Close'])
+    historical_data[i]['MFI'] = mfi(historical_data[i]['Close'], historical_data[i]['Volume'])
+
 
 
 
@@ -194,7 +227,11 @@ for i in range(len(historical_data)):
         Signal = row['Signal']
         MACDConverge = macdCross(MACD, Signal)
         stoch_momentum = row['STOCH']
-        #vwap = row['VWAP']
+        vwap = row['VWAP']
+        ema_50 = row['50_EMA']
+        rsi = row['RSI']
+        mfi = row['MFI']
+
 
    
 
@@ -205,6 +242,7 @@ for i in range(len(historical_data)):
             KnnEmaX = ema_greater_than_knn(ema, knn_ma)
             TrendConfirmation = ema_greater_than_knn(ema, sma)
             MACDConverge = macdCross(MACD, Signal)
+
             
 
         else:
@@ -215,7 +253,7 @@ for i in range(len(historical_data)):
             vwap = None
 
 
-        if (tradeOpen == False and (TrendConfirmation == 1) and (MACDConverge == 0) ) :
+        if (tradeOpen == False and mfi < 50 and MACDConverge ==1 and tradeCheck == False ) :
             buyPrice = close_price
             buyTime = date
             tradeOpen = True
@@ -223,15 +261,50 @@ for i in range(len(historical_data)):
 
             print("Buy at: ", buyPrice, "on: ", buyTime, "Shares: ", shares)
             
-            
-        elif ((KnnEmaX == 0) and (tradeOpen == True)) or (tradeOpen == True and close_price > open_price and close_price > buyPrice and close_price > previous_close and close_price > previous_open ):
+        
+        elif ((mfi > 80 ) and (tradeOpen == True) and (tradeCheck == False)) :
             sellPrice = close_price
             sellTime = date
             tradeOpen = False
-            print("Sell at: ", sellPrice, "on: ", sellTime)
+            print("Sell at: ", sellPrice, "on: ", sellTime, "Capital: ", capital)
             profit = sellPrice - buyPrice
             print("Profit: ", profit)
+            
 
+            
+            buyPriceArray.append(buyPrice)
+            sellPriceArray.append(sellPrice)
+            buyTimeArray.append(buyTime)
+            sellTimeArray.append(sellTime)
+            profitArray.append(profit)
+
+            capital = shares * sellPrice
+            capitalArray.append(capital)
+
+            percentage = (sellPrice - buyPrice) / buyPrice * 100
+            percentageArray.append(percentage)
+            
+
+            if profit > 0:
+                positive.append(profit)
+            else:
+                negative.append(profit)
+
+
+            # Record profit by year
+            year = index.year
+            if year not in profit_by_year:
+                profit_by_year[year] = []
+            profit_by_year[year].append(profit)
+
+        elif ((close_price  < buyPrice  *.95) and tradeOpen == True and tradeCheck == False):
+            sellPrice = close_price
+            sellTime = date
+            tradeOpen = False
+            print("Stop at: ", sellPrice, "on: ", sellTime, "Capital: ", capital)
+            profit = sellPrice - buyPrice
+            print("Profit: ", profit)
+            tradeCheck = True
 
 
 
@@ -261,9 +334,15 @@ for i in range(len(historical_data)):
                 profit_by_year[year] = []
             profit_by_year[year].append(profit)
 
+        elif ((MACDConverge ==0  )  and (tradeCheck == True)) :
+            tradeCheck = False
+
+
+
+
         previous_close = close_price
         previous_open = open_price
-
+        previous_volume = volume
 
         
         table.append([date, open_price, close_price, volume, ema, knn_ma, KnnEmaX, TrendConfirmation, tradeOpen])
@@ -296,4 +375,15 @@ with open("outputCheck.txt", "w") as f:
 print("Output saved to output.txt")
 
 
-print(output)
+print(sum(profitArray))
+print(capital)
+import matplotlib.pyplot as plt
+
+# ... your existing code ...
+
+# Plotting the capital over time
+plt.plot(buyTimeArray, capitalArray)
+plt.xlabel('Buy Time')
+plt.ylabel('Capital')
+plt.title('Capital over Time')
+plt.show()
