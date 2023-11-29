@@ -3,163 +3,30 @@ import numpy as np
 from tabulate import tabulate
 import pandas as pd
 import matplotlib.pyplot as plt
-symbol = 'spy'
 
+#create a simple moving average function
+def sma(data, period):
+    return data.rolling(window=period).mean()
 
-#Quick notes. This program needs to be re written so each day is processed seperately. Also a stop profit needs to be implemented such as -5 precent from the highest price we could have sold for.
+def ema(data, period):
+    return data.ewm(span=period, adjust=False).mean()
 
-def ema_greater_than_knn(ema, knn_ma):
-    if ema * 1 > knn_ma:
-        return 1
-    else:
-        return 0
+def dema(data, period):
+    ema = data.ewm(span=period, adjust=False).mean()
+    dema = 2 * ema - ema.ewm(span=period, adjust=False).mean()
+    return dema
 
-
-def calculate_ema(price_values, ema_len):
-    ema = np.zeros(len(price_values))
-    ema[ema_len-1] = np.mean(price_values[:ema_len])
-    multiplier = 2 / (ema_len + 1)
-    
-    for i in range(ema_len, len(price_values)):
-        ema[i] = (price_values[i] - ema[i-1]) * multiplier + ema[i-1]
-
-    return ema
-
-
-def calculate_knn_ma(price_values, ma_len):
-    knn_ma = [np.mean(price_values[i-ma_len:i]) for i in range(ma_len, len(price_values))]
-    knn_ma = [0]*ma_len + knn_ma
-    return knn_ma
-
-
-def calculate_knn_prediction(price_values, ma_len, num_closest_values=3, smoothing_period=50):
-    def mean_of_k_closest(value, target, num_closest):
-        closest_values = []
-        for i in range(len(value)):
-            distances = [abs(target[i] - v) for v in closest_values]
-            if len(distances) < num_closest or min(distances) < min(distances):
-                closest_values.append(value[i])
-            if len(distances) >= num_closest:
-                max_dist_index = distances.index(max(distances))
-                if distances[max_dist_index] > min(distances):
-                    closest_values[max_dist_index] = value[i]
-        return sum(closest_values) / len(closest_values)
-
-    knn_ma = [mean_of_k_closest(price_values[i-ma_len:i], price_values[i-ma_len:i], num_closest_values)
-              for i in range(ma_len, len(price_values))]
-
-    if len(knn_ma) < smoothing_period:
-        return []
-
-    knn_smoothed = np.convolve(knn_ma, np.ones(smoothing_period) / smoothing_period, mode='valid')
-
-    def knn_prediction(price, knn_ma, knn_smoothed):
-        pos_count = 0
-        neg_count = 0
-        min_distance = 1e10
-        nearest_index = 0
-        
-        # Check if there are enough elements in knn_ma and knn_smoothed
-        if len(knn_ma) < 2 or len(knn_smoothed) < 2:
-            return 0  # Return 0 for neutral if there aren't enough elements
-        
-        for j in range(1, min(10, len(knn_ma))):
-            distance = np.sqrt((knn_ma[j] - price) ** 2)
-            if distance < min_distance:
-                min_distance = distance
-                nearest_index = j
-                
-                # Check if there are enough elements to compare
-                if nearest_index >= 1:
-                    if knn_smoothed[nearest_index] > knn_smoothed[nearest_index - 1]:
-                        pos_count += 1
-                    if knn_smoothed[nearest_index] < knn_smoothed[nearest_index - 1]:
-                        neg_count += 1
-        
-        return 1 if pos_count > neg_count else -1
-
-    knn_predictions = [knn_prediction(price_values[i], knn_ma[i - smoothing_period:i], knn_smoothed[i - smoothing_period:i])
-                       for i in range(smoothing_period, len(price_values))]
-    return knn_predictions
-
-sma_len =30
-def calculate_sma(price_values, sma_len):
-    sma = [np.mean(price_values[i-sma_len:i]) for i in range(sma_len, len(price_values))]
-    sma = [0]*sma_len + sma
-    return sma
-
-
-def calcMACD(data, short_period=9, long_period=12, signal_period=9):
-    short_ema = calcEMA(data, short_period)
-    long_ema = calcEMA(data, long_period)
-
-    macd = [short - long for short, long in zip(short_ema, long_ema)]
-
-    signal = calcEMA(macd, signal_period)
-
+def macd(data, period_long, period_short, period_signal):
+    ema_long = sma(data, period_long)
+    ema_short = sma(data, period_short)
+    macd = ema_short - ema_long
+    signal = sma(macd, period_signal)
     return macd, signal
 
-def calcEMA(data, period):
-    multiplier = 2 / (period + 1)
-    ema = [data[0]]
-
-    for i in range(1, len(data)):
-        ema_val = (data[i] - ema[-1]) * multiplier + ema[-1]
-        ema.append(ema_val)
-
-    return ema    
-
-def macdCross(macd, signal):
-    if macd > signal:
-        return 1
-    else:
-        return 0
-
-
-def stoch(data, period=20):
-    stoch = [np.nan]*period
-    for i in range(period, len(data)):
-        high = max(data[i-period:i])
-        low = min(data[i-period:i])
-        stoch.append((data[i] - low) / (high - low))
-    return stoch
-
-def calcVWAP(data, volume, period=50):
-    vwap = [np.nan]*period
-    for i in range(period, len(data)):
-        vwap.append(sum(data[i-period:i]*volume[i-period:i]) / sum(volume[i-period:i]))
-    return vwap
-
-def rsi (data, period=3):
-    rsi = [np.nan]*period
-    for i in range(period, len(data)):
-        gains = []
-        losses = []
-        for j in range(i-period, i):
-            if data[j] > data[j-1]:
-                gains.append(data[j] - data[j-1])
-            else:
-                losses.append(data[j-1] - data[j])
-        avg_gain = sum(gains) / period
-        avg_loss = sum(losses) / period
-        if avg_loss == 0:
-            rsi.append(100)
-        else:
-            rsi.append(100 - (100 / (1 + avg_gain / avg_loss)))
-    return rsi
-
-def mfi (data, volume, period=3):
-    mfi = [np.nan]*period
-    for i in range(period, len(data)):
-        pos_mf = 0
-        neg_mf = 0
-        for j in range(i-period, i):
-            if data[j] > data[j-1]:
-                pos_mf += data[j] * volume[j]
-            else:
-                neg_mf += data[j] * volume[j]
-        mfi.append(100 - (100 / (1 + pos_mf / neg_mf)))
-    return mfi
+def cci(data, period):
+    typical_price = (data['High'] + data['Low'] + data['Close']) / 3
+    cci = (typical_price - typical_price.rolling(period).mean()) / (0.015 * typical_price.rolling(period).std())
+    return cci
 
 
 #Ticker Detailss
@@ -194,21 +61,19 @@ historical_data.append(data)
 
 tradeCheck = False
 
+highPrice = 0
+lowPrice = 9999999999999
+shares = 0
 
 for i in range(len(historical_data)):
-    ma_len = 20
-    ema_len_5 = 10
-    historical_data[i]['EMA_5'] = calculate_ema(historical_data[i]['Close'], ema_len_5)
-    historical_data[i]['KNN_MA'] = calculate_ema(historical_data[i]['Close'], ma_len)
-    historical_data[i]['SMA'] = calculate_sma(historical_data[i]['Close'], sma_len)
-    historical_data[i]['MACD'], historical_data[i]['Signal'] = calcMACD(historical_data[i]['Close'])
-    historical_data[i]['STOCH'] = stoch(historical_data[i]['Close'])
-    historical_data[i]['VWAP'] = calcVWAP(historical_data[i]['Close'], historical_data[i]['Volume'])
-    historical_data[i]['50_EMA'] = calculate_ema(historical_data[i]['Close'], 30)
-    historical_data[i]['RSI'] = rsi(historical_data[i]['Close'])
-    historical_data[i]['MFI'] = mfi(historical_data[i]['Close'], historical_data[i]['Volume'])
+    historical_data[i]['DEMA_100'] = dema(historical_data[i]['Close'], 100)
+ 
+
+    historical_data[i]['MACD'], historical_data[i]['Signal'] = macd(historical_data[i]['Close'], 26, 12, 9)
+    historical_data[i]['MACDSHORT'], historical_data[i]['SignalShort'] = macd(historical_data[i]['Close'], 20, 10, 6)
 
 
+  
 
 
     table = []
@@ -220,40 +85,22 @@ for i in range(len(historical_data)):
         open_price = row['Open']
         close_price = row['Close']
         volume = row['Volume']
-        ema = row['EMA_5']
-        knn_ma = row['KNN_MA']
-        sma = row['SMA']
-        MACD = row['MACD']
-        Signal = row['Signal']
-        MACDConverge = macdCross(MACD, Signal)
-        stoch_momentum = row['STOCH']
-        vwap = row['VWAP']
-        ema_50 = row['50_EMA']
-        rsi = row['RSI']
-        mfi = row['MFI']
+        dema = row['DEMA_100']
+  
+        macd = row['MACD']
+        signal = row['Signal']
 
+        macdshort = row['MACDSHORT']
+        signalshort = row['SignalShort']
+
+
+
+       
 
    
 
 
-
-
-        if ema != None and knn_ma != None and sma != None and MACD != None and Signal != None:# and vwap != None:
-            KnnEmaX = ema_greater_than_knn(ema, knn_ma)
-            TrendConfirmation = ema_greater_than_knn(ema, sma)
-            MACDConverge = macdCross(MACD, Signal)
-
-            
-
-        else:
-            KnnEmaX = None
-            TrendConfirmation = None
-            MACDConverge = None
-            stoch_momentum = None
-            vwap = None
-
-
-        if (tradeOpen == False and mfi < 50 and MACDConverge ==1 and tradeCheck == False ) :
+        if (tradeOpen == False  and macd > signal and macd < 0 and macdshort > signalshort and macdshort < 0  )   :
             buyPrice = close_price
             buyTime = date
             tradeOpen = True
@@ -262,11 +109,11 @@ for i in range(len(historical_data)):
             print("Buy at: ", buyPrice, "on: ", buyTime, "Shares: ", shares)
             
         
-        elif ((mfi > 80 ) and (tradeOpen == True) and (tradeCheck == False)) :
+        elif (tradeOpen == True and ((macdshort > signalshort and macd > macdshort  ) )):
             sellPrice = close_price
             sellTime = date
             tradeOpen = False
-            print("Sell at: ", sellPrice, "on: ", sellTime, "Capital: ", capital)
+            print("Sell at: ", sellPrice, "on: ", sellTime, "Capital: ", capital, "High Price", highPrice, "Low Price", lowPrice)
             profit = sellPrice - buyPrice
             print("Profit: ", profit)
             
@@ -283,6 +130,9 @@ for i in range(len(historical_data)):
 
             percentage = (sellPrice - buyPrice) / buyPrice * 100
             percentageArray.append(percentage)
+
+            highPrice = 0
+            lowPrice = 9999999999999
             
 
             if profit > 0:
@@ -296,47 +146,10 @@ for i in range(len(historical_data)):
             if year not in profit_by_year:
                 profit_by_year[year] = []
             profit_by_year[year].append(profit)
-
-        elif ((close_price  < buyPrice  *.95) and tradeOpen == True and tradeCheck == False):
-            sellPrice = close_price
-            sellTime = date
-            tradeOpen = False
-            print("Stop at: ", sellPrice, "on: ", sellTime, "Capital: ", capital)
-            profit = sellPrice - buyPrice
-            print("Profit: ", profit)
-            tradeCheck = True
-
-
-
-
-            buyPriceArray.append(buyPrice)
-            sellPriceArray.append(sellPrice)
-            buyTimeArray.append(buyTime)
-            sellTimeArray.append(sellTime)
-            profitArray.append(profit)
-
-            capital = shares * sellPrice
-            capitalArray.append(capital)
-
-            percentage = (sellPrice - buyPrice) / buyPrice * 100
-            percentageArray.append(percentage)
-            
-
-            if profit > 0:
-                positive.append(profit)
-            else:
-                negative.append(profit)
-
-
-            # Record profit by year
-            year = index.year
-            if year not in profit_by_year:
-                profit_by_year[year] = []
-            profit_by_year[year].append(profit)
-
-        elif ((MACDConverge ==0  )  and (tradeCheck == True)) :
-            tradeCheck = False
-
+        
+        elif (tradeOpen == True):
+            highPrice = max(highPrice, close_price)
+            lowPrice = min(lowPrice, close_price)
 
 
 
@@ -345,9 +158,9 @@ for i in range(len(historical_data)):
         previous_volume = volume
 
         
-        table.append([date, open_price, close_price, volume, ema, knn_ma, KnnEmaX, TrendConfirmation, tradeOpen])
+        table.append([date, open_price, close_price, volume, tradeOpen])
 
-header = ['Date', 'Open', 'Close', 'Volume', 'EMA_5', 'KNN_MA', 'KnnEmaX', 'TrendConfirmation', 'TradeOpen']
+header = ['Date', 'Open', 'Close', 'Volume', 'TradeOpen']
 output = tabulate(table, headers=header, tablefmt='orgtbl')
 
 print("\n")
